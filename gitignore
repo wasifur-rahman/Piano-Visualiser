@@ -1,0 +1,35 @@
+# Build output
+build/
+out/
+bin/
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+
+# vcpkg (if you use a project-local install instead of a global one)
+vcpkg_installed/
+
+# Soundfonts - large binary files, don't belong in git
+assets/*.sf2
+assets/*.sfz
+assets/*.sf3
+
+# IDE/editor clutter
+.vs/
+.vscode/
+*.user
+*.suo
+.idea/
+
+# OS clutter
+Thumbs.db
+.DS_Store
