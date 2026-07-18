@@ -1,3 +1,0 @@
-C:/Users/wasif/Desktop/PianoVisualiser/build/CMakeFiles/piano_viz.dir
-C:/Users/wasif/Desktop/PianoVisualiser/build/CMakeFiles/edit_cache.dir
-C:/Users/wasif/Desktop/PianoVisualiser/build/CMakeFiles/rebuild_cache.dir

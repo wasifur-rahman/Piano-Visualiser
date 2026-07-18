@@ -19,9 +19,7 @@ _deps/
 vcpkg_installed/
 
 # Soundfonts - large binary files, don't belong in git
-assets/*.sf2
-assets/*.sfz
-assets/*.sf3
+assets/
 
 # IDE/editor clutter
 .vs/
