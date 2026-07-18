@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "C:/raylib/w64devkit/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/raylib/w64devkit/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/raylib/w64devkit/bin/mingw32-make.exe"
+      }
+    }
+  ]
+}

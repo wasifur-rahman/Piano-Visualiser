@@ -1,0 +1,1 @@
+ "vcpkg_installed/x64-mingw-static/lib/librtmidi.a" "vcpkg_installed/x64-mingw-static/lib/libfluidsynth-3.a" C:/raylib/raylib/src/libraylib.a -lopengl32 -lgdi32 -lwinmm -ldsound -lksuser -lole32 -lws2_32 -lwinmm -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

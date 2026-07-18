@@ -1,0 +1,13 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "piano_viz.exe",
+      "name": "piano_viz.exe",
+      "currentDir": "C:\\Users\\wasif\\Desktop\\PianoVisualiser"
+    }
+  ]
+}

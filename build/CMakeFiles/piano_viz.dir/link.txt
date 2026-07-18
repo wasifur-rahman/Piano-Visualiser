@@ -1,0 +1,3 @@
+"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E rm -f CMakeFiles\piano_viz.dir/objects.a
+C:\raylib\w64devkit\bin\ar.exe qc CMakeFiles\piano_viz.dir/objects.a @CMakeFiles\piano_viz.dir\objects1.rsp
+C:\raylib\w64devkit\bin\g++.exe -O3 -DNDEBUG -Wl,--whole-archive CMakeFiles\piano_viz.dir/objects.a -Wl,--no-whole-archive -o piano_viz.exe -Wl,--out-implib,libpiano_viz.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\piano_viz.dir\linkLibs.rsp
