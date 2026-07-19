@@ -211,6 +211,10 @@ int main() {
 		if (IsKeyPressed(KEY_RIGHT) && transposeSemitones < 6) transposeSemitones++;
 		if (IsKeyPressed(KEY_LEFT) && transposeSemitones > -6 && transposeSemitones > -6) transposeSemitones--;
 
+		if (IsKeyPressed(KEY_ESCAPE)) break;
+
+		if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
+
         // Drain MIDI queue - trigger sound immediately, update visual state
         {
             std::lock_guard<std::mutex> lock(midiMutex);
