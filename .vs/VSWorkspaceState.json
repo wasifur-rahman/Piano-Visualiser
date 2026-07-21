@@ -6,7 +6,10 @@
   },
   "ExpandedNodes": [
     "",
-    "\\src"
+    "\\src",
+    "\\src\\ui",
+    "\\src\\visuals"
   ],
+  "SelectedNode": "\\src\\visuals\\particles.cpp",
   "PreviewInSolutionExplorer": false
 }
