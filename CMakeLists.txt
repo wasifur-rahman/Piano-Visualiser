@@ -19,7 +19,6 @@ add_executable(piano_viz
     src/main.cpp
     src/audio.cpp
     src/midi.cpp
-    src/settings.cpp
     src/window_state.cpp
     src/visuals/layout.cpp
     src/visuals/blocks.cpp
@@ -30,7 +29,6 @@ add_executable(piano_viz
 )
 
 target_include_directories(piano_viz PRIVATE ${RAYLIB_SRC} ${RAYGUI_SRC})
-target_compile_definitions(piano_viz PRIVATE RAYGUI_IMPLEMENTATION)
 
 target_link_libraries(piano_viz PRIVATE
     RtMidi::rtmidi

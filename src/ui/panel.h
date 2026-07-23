@@ -16,7 +16,8 @@ namespace panel {
         std::string imagePath;
         float offsetX = 0.0f;
         float offsetY = 0.0f;
-        float scale = 1.0f;
+        float scaleX = 1.0f;
+        float scaleY = 1.0f;
         bool keepAspectRatio = true;
     };
 

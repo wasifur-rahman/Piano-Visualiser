@@ -6,4 +6,10 @@
 namespace toolbar {
     void update(float dt);
     void draw(int screenWidth);
+
+    // Transpose control (was settings::, folded in here since the toolbar
+    // is the only thing that owns/displays it).
+    void transposeUp();
+    void transposeDown();
+    int getTranspose();
 }

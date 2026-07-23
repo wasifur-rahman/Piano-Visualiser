@@ -11,13 +11,12 @@
 //
 // main() is just an orchestrator now: each subsystem below owns its own
 // state and exposes update()/draw() (or onNoteOn/onNoteOff for event-driven
-// ones). See audio.*, midi.*, settings.*, visuals/*, ui/* for the details.
+// ones). See audio.*, midi.*, visuals/*, ui/* for the details.
 
 #include <raylib.h>
 
 #include "midi.h"
 #include "audio.h"
-#include "settings.h"
 #include "visuals/layout.h"
 #include "visuals/blocks.h"
 #include "visuals/particles.h"
@@ -52,8 +51,8 @@ int main() {
         float dt = GetFrameTime();
 
         // ---------------- Input ----------------
-        if (IsKeyPressed(KEY_RIGHT)) settings::transposeUp();
-        if (IsKeyPressed(KEY_LEFT))  settings::transposeDown();
+        if (IsKeyPressed(KEY_RIGHT)) toolbar::transposeUp();
+        if (IsKeyPressed(KEY_LEFT))  toolbar::transposeDown();
         if (IsKeyPressed(KEY_ESCAPE)) break;
         if (IsKeyPressed(KEY_F11)) window_state::setWindowMode(!window_state::isWindowedFullscreen());
 
@@ -64,17 +63,21 @@ int main() {
         midiCheckTimer += dt;
         if (midiCheckTimer >= midiCheckInterval) {
             midiCheckTimer = 0.0f;
+
             if (midiInInitialized) {
                 try {
-                    RtMidiIn tempMidiIn;
-                    if (tempMidiIn.getPortCount() == 0) {
+                    const unsigned int portCount = midiIn->getPortCount();
+                    if (portCount == 0) {
+                        std::cout << "[MIDI] Device disconnected; attempting reconnect." << std::endl;
                         midiInInitialized = false;
                     }
                 }
-                catch (RtMidiError&) {
+                catch (RtMidiError& e) {
+                    std::cout << "[MIDI] Device check failed: " << e.getMessage() << std::endl;
                     midiInInitialized = false;
                 }
             }
+
             if (!midiInInitialized) {
                 attemptConnection();
             }
@@ -94,7 +97,7 @@ int main() {
                 bool isControlChange = (statusType == 0xB0);
 
                 if (isNoteOn || isNoteOff) {
-                    int transposedNote = (int)ev.note + settings::getTranspose();
+                    int transposedNote = (int)ev.note + toolbar::getTranspose();
 
                     if (transposedNote < PIANO_LOW || transposedNote > PIANO_HIGH) {
                         continue; // outside the piano range, ignore

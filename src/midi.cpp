@@ -16,21 +16,37 @@ void midiCallback(double /*deltatime*/, std::vector<unsigned char>* message, voi
 }
 
 void attemptConnection() {
+    midiInInitialized = false;
+    midiIn.reset();
+
     try {
-        midiIn = std::make_unique<RtMidiIn>();
-        unsigned int nPorts = midiIn->getPortCount();
-        if (nPorts > 0) {
-            midiIn->openPort(0);
-            midiIn->setCallback(&midiCallback);
-            midiIn->ignoreTypes(false, false, false);
-            midiInInitialized = true;
+        auto newMidiIn = std::make_unique<RtMidiIn>();
+        const unsigned int portCount = newMidiIn->getPortCount();
+
+        if (portCount == 0) {
+            std::cout << "[MIDI] No input ports detected." << std::endl;
+            return;
         }
-        else {
-            midiInInitialized = false;
+
+        for (unsigned int portIndex = 0; portIndex < portCount; ++portIndex) {
+            try {
+                newMidiIn->openPort(portIndex);
+                newMidiIn->setCallback(&midiCallback);
+                newMidiIn->ignoreTypes(false, false, false);
+
+                midiIn = std::move(newMidiIn);
+                midiInInitialized = true;
+                std::cout << "[MIDI] Connected to input port " << portIndex << std::endl;
+                return;
+            }
+            catch (const RtMidiError& e) {
+                std::cerr << "[MIDI] Failed to open port " << portIndex << ": " << e.getMessage() << std::endl;
+            }
         }
+
+        std::cout << "[MIDI] No input ports could be opened." << std::endl;
     }
-    catch (RtMidiError& e) {
-        std::cerr << "MIDI initialization error: " << e.getMessage() << std::endl;
-        midiInInitialized = false;
+    catch (const RtMidiError& e) {
+        std::cerr << "[MIDI] initialization error: " << e.getMessage() << std::endl;
     }
 }
