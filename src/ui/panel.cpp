@@ -1,6 +1,9 @@
 #include "panel.h"
 #include "../visuals/layout.h"
+#include "../visuals/blocks.h"
+#include "../visuals/particles.h"
 #include "../window_state.h"
+#include "../audio.h"
 
 #include <raylib.h>
 #define RAYGUI_IMPLEMENTATION
@@ -37,15 +40,33 @@ namespace {
             settingsWidth,
             settingsHeight,
             settingsX + 16.0f,
-            settingsY + 64.0f,
+            settingsY + 100.0f,
             settingsWidth - 32.0f,
-            settingsHeight - 96.0f
+            settingsHeight - 132.0f
         };
     }
 
     Rectangle getCloseButton(const SettingsLayout& layout) {
         return { layout.x + layout.width - 42.0f, layout.y + 10.0f, 32.0f, 32.0f };
     }
+
+    bool particlesEnabledValue = true;
+    float blockRoundednessValue = 0.0f;
+    int blockShaderStyleIndex = 0; // 0=None,1=Glossy,2=Metal, 3=Metal2, 4=Neon — mirrors blocks::ShaderStyle
+
+    float shaderAmountValues[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    int draggingAmountIndex = -1;
+
+    // --- Audio tab backing values
+    float gainValue = 3.0f;
+    float reverbRoomValue = 0.5f;
+    float reverbDampValue = 0.0f;
+    float reverbWidthValue = 5.0f;
+    float reverbLevelValue = 0.0f;
+    float chorusVoicesValue = 3.0f; // GuiSlider needs float; cast to int for audio::setChorus
+    float chorusLevelValue = 1.2f;
+    float chorusSpeedValue = 0.3f;
+    float chorusDepthValue = 8.0f;
 
     bool settingsOpen = false;
     float settingsScroll = 0.0f;
@@ -78,7 +99,7 @@ namespace {
         return selectedPath;
     }
 
-    void loadBackgroundTextureIfNeeded() {
+    void loadBackgroundTexture() {
         if (backgroundTextureLoaded) return;
         if (!backgroundSettings.imagePath.empty()) {
             if (FileExists(backgroundSettings.imagePath.c_str())) {
@@ -93,6 +114,27 @@ namespace {
                 }
             }
         }
+    }
+
+    enum class settingsTab { Color, Background, Audio };
+    settingsTab currentTab = settingsTab::Color;
+
+    struct tabRects {
+        Rectangle color;
+        Rectangle background;
+        Rectangle audio;
+    };
+
+    tabRects getTabRects(const SettingsLayout& layout) {
+        const float tabWidth = 150.0f;
+        const float tabHeight = 30.0f;
+        const float tabY = layout.y + 60.0f;
+
+        return {
+            { layout.x + 20.0f, tabY, tabWidth, tabHeight },
+            { layout.x + 20.0f + (tabWidth + 10.0f), tabY, tabWidth, tabHeight },
+            { layout.x + 20.0f + (tabWidth + 10.0f) * 2.0f, tabY, tabWidth, tabHeight }
+        };
     }
 }
 
@@ -109,7 +151,7 @@ namespace panel {
             UnloadTexture(backgroundTexture);
             backgroundTexture = { 0 };
         }
-        loadBackgroundTextureIfNeeded();
+        loadBackgroundTexture();
     }
 
     void unloadBackgroundImage() {
@@ -139,20 +181,50 @@ namespace panel {
 
         const SettingsLayout layout = getSettingsLayout(GetScreenWidth(), GetScreenHeight());
         const Rectangle closeButton = getCloseButton(layout);
+        const tabRects tabs = getTabRects(layout);
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
             Vector2 mousePos = GetMousePosition();
             if (CheckCollisionPointRec(mousePos, closeButton)) {
                 settingsOpen = false;
             }
+            else if (CheckCollisionPointRec(mousePos, tabs.color) && currentTab != settingsTab::Color) {
+                currentTab = settingsTab::Color;
+                settingsScroll = 0.0f;
+            }
+            else if (CheckCollisionPointRec(mousePos, tabs.background) && currentTab != settingsTab::Background) {
+                currentTab = settingsTab::Background;
+                settingsScroll = 0.0f;
+            }
+            else if (CheckCollisionPointRec(mousePos, tabs.audio) && currentTab != settingsTab::Audio) {
+                currentTab = settingsTab::Audio;
+                settingsScroll = 0.0f;
+            }
         }
 
         layout::ColorRange range = { lowColor, highColor };
         layout::setColorRange(range);
+
+        particles::setEnabled(particlesEnabledValue);
+
+        blocks::setRoundedness(blockRoundednessValue);
+        blocks::setShaderStyle((blocks::ShaderStyle)blockShaderStyleIndex);
+        if (blockShaderStyleIndex >= 1 && blockShaderStyleIndex <= 4) {
+            blocks::setShaderAmount(shaderAmountValues[blockShaderStyleIndex - 1]);
+        }
+
+        audio::setGain(gainValue);
+        audio::setReverb(reverbRoomValue, reverbDampValue, reverbWidthValue, reverbLevelValue);
+        audio::setChorus((int)chorusVoicesValue, chorusLevelValue, chorusSpeedValue, chorusDepthValue);
+
+        // Per-channel effect sends — without these, the global reverb/chorus
+        // bus above has nothing routed into it and the sliders do nothing audible.
+        audio::controlChange(91, (int)(reverbLevelValue * 127.0f));       // CC91 = reverb send
+        audio::controlChange(93, (int)(chorusLevelValue / 10.0f * 127.0f)); // CC93 = chorus send
     }
 
     void drawBackground(int screenWidth, int screenHeight) {
-        loadBackgroundTextureIfNeeded();
+        loadBackgroundTexture();
         if (backgroundTexture.id == 0 || backgroundSettings.imagePath.empty()) {
             return;
         }
@@ -185,6 +257,35 @@ namespace panel {
 
     namespace {
     bool draggingPositionDot = false;
+}
+
+void drawVerticalAmountSlider(Rectangle bounds, float& value, int index) {
+    const float minVal = 0.0f;
+    const float maxVal = 3.0f;
+
+    DrawRectangleRec(bounds, Color{ 45, 45, 50, 255 });
+    DrawRectangleLinesEx(bounds, 1.0f, LIGHTGRAY);
+
+    Vector2 mouse = GetMousePosition();
+    bool hovering = CheckCollisionPointRec(mouse, bounds);
+
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hovering) {
+        draggingAmountIndex = index;
+    }
+    if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+        draggingAmountIndex = -1;
+    }
+    if (draggingAmountIndex == index && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+        float clampedY = Clamp(mouse.y, bounds.y, bounds.y + bounds.height);
+        float t = 1.0f - (clampedY - bounds.y) / bounds.height;
+        value = minVal + t * (maxVal - minVal);
+    }
+
+    float t = Clamp((value - minVal) / (maxVal - minVal), 0.0f, 1.0f);
+    float fillHeight = bounds.height * t;
+    DrawRectangleRec({ bounds.x, bounds.y + bounds.height - fillHeight, bounds.width, fillHeight },
+        draggingAmountIndex == index ? YELLOW : SKYBLUE);
+    DrawRectangle((int)bounds.x - 2, (int)(bounds.y + bounds.height - fillHeight) - 2, (int)bounds.width + 4, 4, RAYWHITE);
 }
 
 void drawPositionPad(float padX, float padY, float padW, float padH, int screenWidth, int screenHeight) {
@@ -234,6 +335,24 @@ void drawPositionPad(float padX, float padY, float padW, float padH, int screenW
         DrawRectangleRec(closeButton, RED);
         DrawText("X", (int)closeButton.x + 8, (int)closeButton.y + 5, 20, RAYWHITE);
 
+        const tabRects tabs = getTabRects(layout);
+        Color colortabBg = (currentTab == settingsTab::Color) ? Color{ 70, 70, 90, 255 } : Color{ 40, 40, 45, 255 };
+        Color backgroundtabBg = (currentTab == settingsTab::Background) ? Color{ 70, 70, 90, 255 } : Color{ 40, 40, 45, 255 };
+        Color audiotabBg = (currentTab == settingsTab::Audio) ? Color{ 70, 70, 90, 255 } : Color{ 40, 40, 45, 255 };
+
+        DrawRectangleRec(tabs.color, colortabBg);
+        DrawRectangleLinesEx(tabs.color, 1.0f, LIGHTGRAY);
+        DrawText("Color", (int)tabs.color.x + 45, (int)tabs.color.y + 6, 18, RAYWHITE);
+
+        DrawRectangleRec(tabs.background, backgroundtabBg);
+        DrawRectangleLinesEx(tabs.background, 1.0f, LIGHTGRAY);
+        DrawText("Background", (int)tabs.background.x + 20, (int)tabs.background.y + 6, 18, RAYWHITE);
+
+        DrawRectangleRec(tabs.audio, audiotabBg);
+        DrawRectangleLinesEx(tabs.audio, 1.0f, LIGHTGRAY);
+        DrawText("Audio", (int)tabs.audio.x + 50, (int)tabs.audio.y + 6, 18, RAYWHITE);
+
+
         const float viewportX = layout.viewportX;
         const float viewportY = layout.viewportY;
         const float viewportWidth = layout.viewportWidth;
@@ -241,22 +360,19 @@ void drawPositionPad(float padX, float padY, float padW, float padH, int screenW
         const float contentWidth = viewportWidth - 20.0f;
 
         // --- Shared spacing constants -------------------------------------------------
-        // Everything below is laid out with a running cursor: each element's position
-        // is "previous element's bottom edge + a gap", never a hardcoded absolute pixel.
-        // That's what makes it impossible for two controls to silently overlap again.
-        const float titleOffset   = 34.0f; // space reserved for the GuiGroupBox title bar
-        const float sectionGap    = 28.0f; // gap between the Color / Background group boxes
-        const float sectionBottomPad = 20.0f; // breathing room before a group box's bottom edge
+        const float titleOffset   = 34.0f;
+        const float sectionGap    = 28.0f;
+        const float sectionBottomPad = 20.0f;
 
         const float labelHeight = 20.0f;
-        const float labelGap    = 10.0f; // gap between a label and the control(s) under it
+        const float labelGap    = 10.0f;
 
-        const float rowGap       = 14.0f; // gap between stacked rows (sliders, etc.)
-        const float colorBlockGap = 26.0f; // gap between the "Low" and "High" color blocks
+        const float rowGap       = 14.0f;
+        const float colorBlockGap = 26.0f;
 
-        const float colorPickerSize = 140.0f; // width/height of the color picker square
-        const float colorPickerHuePadding = 10.0f; // space between the color picker square and the hue slider
-        const float colorPickerHueWidth = 16.0f; // width of the hue slider
+        const float colorPickerSize = 140.0f;
+        const float colorPickerHuePadding = 10.0f;
+        const float colorPickerHueWidth = 16.0f;
         const float colorPickerTotalWidth = colorPickerSize + colorPickerHuePadding + colorPickerHueWidth;
         const float colorBlockHeight = colorPickerSize;
 
@@ -270,22 +386,33 @@ void drawPositionPad(float padX, float padY, float padW, float padH, int screenW
         const float gapAfterPathText   = 14.0f;
         const float checkboxHeight     = 20.0f;
         const float gapAfterCheckbox   = 20.0f;
-        const float padLabelReserve    = labelHeight + 12.0f; // space for drawPositionPad's own label
+        const float padLabelReserve    = labelHeight + 12.0f;
         const float gapAfterPad        = 22.0f;
         const float scaleSliderHeight  = 20.0f;
 
-        // The position pad's height depends on the aspect ratio of screenWidth/screenHeight,
-        // so it MUST be computed before we size the group box around it - otherwise the
-        // Scale X/Y sliders below it get placed at a fixed offset and end up overlapping it
-        // whenever padH is taller than that offset assumed.
         const float padW = std::min(180.0f, contentWidth - 60.0f);
         const float padH = padW * ((float)screenHeight / (float)screenWidth);
 
+        // Audio section pieces — Gain / Reverb / Chorus sit in three side-by-side
+        // columns, each with its own header, so height only needs to fit the
+        // tallest column (Reverb and Chorus both have 4 rows).
+        const float groupHeaderHeight = 24.0f;
+        const float groupHeaderGap = 12.0f;
+        const int audioMaxRowsPerColumn = 4;
+
+        const float toggleHeightForLayout = 24.0f;
+        const float amtSliderHeightForLayout = 70.0f;
+        const float amtSliderGapForLayout = 8.0f;
+
         const float colorSectionHeight =
             titleOffset +
-            (labelHeight + labelGap + colorBlockHeight) + // Low color block
+            (labelHeight + labelGap + colorBlockHeight) + // Low color row
             colorBlockGap +
-            (labelHeight + labelGap + colorBlockHeight) + // High color block
+            (labelHeight + labelGap + colorBlockHeight) + // High color row
+            colorBlockGap +
+            (labelHeight + labelGap) +                    // "Block Style" label
+            amtSliderHeightForLayout + amtSliderGapForLayout +
+            toggleHeightForLayout +
             sectionBottomPad;
 
         const float backgroundSectionHeight =
@@ -300,7 +427,17 @@ void drawPositionPad(float padX, float padY, float padW, float padH, int screenW
             scaleSliderHeight +
             sectionBottomPad;
 
-        const float contentHeight = 20.0f + colorSectionHeight + sectionGap + backgroundSectionHeight + 20.0f;
+        const float audioSectionHeight =
+            titleOffset +
+            groupHeaderHeight + groupHeaderGap +
+            audioMaxRowsPerColumn * (labelHeight + labelGap + scaleSliderHeight + rowGap) - rowGap +
+            sectionBottomPad;
+
+        float sectionHeight = colorSectionHeight;
+        if (currentTab == settingsTab::Background) sectionHeight = backgroundSectionHeight;
+        else if (currentTab == settingsTab::Audio) sectionHeight = audioSectionHeight;
+
+        const float contentHeight = 20.0f + sectionHeight + 20.0f;
         const float maxScroll = std::max(0.0f, contentHeight - viewportHeight);
 
         settingsScroll = Clamp(settingsScroll, 0.0f, maxScroll);
@@ -316,6 +453,8 @@ void drawPositionPad(float padX, float padY, float padW, float padH, int screenW
         const float thumbHeight = std::max(28.0f, scrollBarHeight * (viewportHeight / std::max(contentHeight, 1.0f)));
         const float thumbY = scrollBarY + (scrollBarHeight - thumbHeight) * (maxScroll > 0.0f ? settingsScroll / maxScroll : 0.0f);
         Rectangle scrollThumb = { scrollBarX, thumbY, 8.0f, thumbHeight };
+
+        const float controlsColumnX = rightColumnX + 80.0f + 50.0f;
 
         Vector2 mouse = GetMousePosition();
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, scrollThumb)) {
@@ -338,91 +477,156 @@ void drawPositionPad(float padX, float padY, float padW, float padH, int screenW
 
         float y = 20.0f - settingsScroll;
 
-        // ---------------------------------------------------------------- Color section
-        GuiGroupBox({ viewportX + 10.0f, viewportY + y, contentWidth, colorSectionHeight }, "Color range");
+        if (currentTab == settingsTab::Color){
+            float cy = viewportY + y + titleOffset;
 
-        float cy = viewportY + y + titleOffset;
+            DrawText("Low note color", (int)leftColumnX, (int)cy, 18, RAYWHITE);
+            cy += labelHeight + labelGap;
 
-        DrawText("Low note color", (int)leftColumnX, (int)cy, 18, RAYWHITE);
-        cy += labelHeight + labelGap;
+            const float lowBlockTop = cy;
+            GuiColorPicker({ leftColumnX, cy, colorPickerSize, colorPickerSize }, nullptr, &lowColor);
+            cy += colorPickerSize;
 
-        const float lowBlockTop = cy;
-        GuiColorPicker({ leftColumnX, cy, colorPickerSize, colorPickerSize }, nullptr, &lowColor);
-        cy += colorPickerSize;
+            DrawRectangleRec({ rightColumnX, lowBlockTop, 80.0f, colorBlockHeight }, lowColor);
+            DrawRectangleLinesEx({ rightColumnX, lowBlockTop, 80.0f, colorBlockHeight }, 1.0f, LIGHTGRAY);
 
+            DrawText("Particles", (int)controlsColumnX, (int)lowBlockTop, 18, RAYWHITE);
+            GuiCheckBox({ controlsColumnX, lowBlockTop + labelHeight + labelGap, 20.0f, checkboxHeight }, "Enabled Particles", &particlesEnabledValue);
 
+            cy += colorBlockGap;
 
-        DrawRectangleRec({ rightColumnX, lowBlockTop, 80.0f, colorBlockHeight }, lowColor);
-        DrawRectangleLinesEx({rightColumnX, lowBlockTop, 80.0f, colorBlockHeight}, 1.0f, LIGHTGRAY);
-        
-        cy += colorBlockGap;
+            DrawText("High note color", (int)leftColumnX, (int)cy, 18, RAYWHITE);
+            cy += labelHeight + labelGap;
 
-        DrawText("High note color", (int)leftColumnX, (int)cy, 18, RAYWHITE);
-        cy += labelHeight + labelGap;
+            const float highBlockTop = cy;
+            GuiColorPicker({ leftColumnX, cy, colorPickerSize, colorPickerSize }, nullptr, &highColor);
+            cy += colorPickerSize;
 
-        const float highBlockTop = cy;
-        GuiColorPicker({ leftColumnX, cy, colorPickerSize, colorPickerSize }, nullptr, &highColor);
-        cy += colorPickerSize;
+            DrawRectangleRec({ rightColumnX, highBlockTop, 80.0f, colorBlockHeight }, highColor);
+            DrawRectangleLinesEx({ rightColumnX, highBlockTop, 80.0f, colorBlockHeight }, 1.0f, LIGHTGRAY);
 
+            DrawText("Block Roundedness", (int)controlsColumnX, (int)highBlockTop, 18, RAYWHITE);
+            GuiSlider({ controlsColumnX, highBlockTop + labelHeight + labelGap, 160.0f, scaleSliderHeight }, "", TextFormat("%.2f", blockRoundednessValue), &blockRoundednessValue, 0.0f, 1.0f);
 
+            cy += colorBlockGap;
 
-        DrawRectangleRec({ rightColumnX, highBlockTop, 80.0f, colorBlockHeight }, highColor);
-        DrawRectangleLinesEx({rightColumnX, highBlockTop, 80.0f, colorBlockHeight}, 1.0f, LIGHTGRAY);
+            // ---- Block Style: full width row under both color pickers ----
+            const float toggleWidth  = 65.0f;
+            const float toggleHeight = 24.0f;
+            const float toggleGap    = 2.0f;   // raygui's default gap between toggle buttons
+            const float amtSliderH   = 70.0f;
+            const float amtSliderGap = 8.0f;   // gap between slider bottom and button top
 
+            DrawText("Block Style", (int)leftColumnX, (int)cy, 18, RAYWHITE);
+            cy += labelHeight + labelGap;
+
+            const float toggleY = cy + amtSliderH + amtSliderGap;
+            GuiToggleGroup(
+                { leftColumnX, toggleY, toggleWidth, toggleHeight },
+                "None;Glossy;Metal;Metal 2;Neon",
+                &blockShaderStyleIndex);
+
+            // Sliders sit directly above their matching button (skip "None" at i=0)
+            for (int i = 1; i <= 4; ++i) {
+                float buttonX = leftColumnX + i * (toggleWidth + toggleGap);
+                Rectangle sliderBounds = { buttonX, cy, toggleWidth, amtSliderH };
+                drawVerticalAmountSlider(sliderBounds, shaderAmountValues[i - 1], i - 1);
+            }
+
+            cy = toggleY + toggleHeight;
+        }
+        else if (currentTab == settingsTab::Background) {
         // ----------------------------------------------------------- Background section
-        y += colorSectionHeight + sectionGap;
-        GuiGroupBox({ viewportX + 10.0f, viewportY + y, contentWidth, backgroundSectionHeight }, "Background");
+            float cy2 = viewportY + y + titleOffset;
 
-        float cy2 = viewportY + y + titleOffset;
+            if (GuiButton({ viewportX + 30.0f, cy2, 180.0f, buttonHeight }, "Choose image")) {
+                const bool wasFullscreen = window_state::isWindowedFullscreen();
+                if (wasFullscreen) {
+                    window_state::setWindowMode(false);
+                }
 
-        if (GuiButton({ viewportX + 30.0f, cy2, 180.0f, buttonHeight }, "Choose image")) {
-            const bool wasFullscreen = window_state::isWindowedFullscreen();
-            if (wasFullscreen) {
-                window_state::setWindowMode(false);
-            }
-
-            std::string selectedPath = pickImagePathFromExplorer();
-            if (!selectedPath.empty()) {
+                std::string selectedPath = pickImagePathFromExplorer();
+                if (!selectedPath.empty()) {
                 setBackgroundImage(selectedPath.c_str());
+                }
+
+                if (wasFullscreen) {
+                    window_state::setWindowMode(true);
+                }
             }
+            cy2 += buttonHeight + gapAfterButton;
 
-            if (wasFullscreen) {
-                window_state::setWindowMode(true);
+            if (!backgroundSettings.imagePath.empty()) {
+                DrawText(backgroundSettings.imagePath.c_str(), (int)(viewportX + 30.0f), (int)cy2, 14, RAYWHITE);
             }
+            cy2 += pathTextHeight + gapAfterPathText;
+
+            bool keepAspectValue = backgroundSettings.keepAspectRatio;
+            GuiCheckBox({ viewportX + 30.0f, cy2, 20.0f, checkboxHeight }, "Keep aspect ratio", &keepAspectValue);
+            backgroundSettings.keepAspectRatio = keepAspectValue;
+            cy2 += checkboxHeight + gapAfterCheckbox;
+
+            cy2 += padLabelReserve;
+
+            drawPositionPad(viewportX + 30.0f, cy2, padW, padH, screenWidth, screenHeight);
+            cy2 += padH + gapAfterPad;
+
+            float oldScaleX = backgroundSettings.scaleX;
+            float oldScaleY = backgroundSettings.scaleY;
+            float scaleXValue = backgroundSettings.scaleX;
+            float scaleYValue = backgroundSettings.scaleY;
+            GuiSlider({ viewportX + 30.0f, cy2, 180.0f, scaleSliderHeight }, "Scale X", TextFormat("%.2f", scaleXValue), &scaleXValue, 0.1f, 3.0f);
+            cy2 += scaleSliderHeight + rowGap;
+            GuiSlider({ viewportX + 30.0f, cy2, 180.0f, scaleSliderHeight }, "Scale Y", TextFormat("%.2f", scaleYValue), &scaleYValue, 0.1f, 3.0f);
+            cy2 += scaleSliderHeight;
+
+            if (backgroundSettings.keepAspectRatio) {
+                if (scaleXValue != oldScaleX)      scaleYValue = scaleXValue;
+                else if (scaleYValue != oldScaleY) scaleXValue = scaleYValue;
+            }
+            
+            backgroundSettings.scaleX = scaleXValue;
+            backgroundSettings.scaleY = scaleYValue;
         }
-        cy2 += buttonHeight + gapAfterButton;
+        else {
+        // ----------------------------------------------------------------- Audio section
+        // Grouped horizontally: Gain | Reverb | Chorus, each stacked vertically.
+            const float sliderW = 160.0f;
+            const float columnGap = 40.0f;
 
-        if (!backgroundSettings.imagePath.empty()) {
-            DrawText(backgroundSettings.imagePath.c_str(), (int)(viewportX + 30.0f), (int)cy2, 14, RAYWHITE);
+            const float col1X = viewportX + 30.0f;           // Gain
+            const float col2X = col1X + sliderW + columnGap; // Reverb
+            const float col3X = col2X + sliderW + columnGap; // Chorus
+
+            const float groupTop = viewportY + y + titleOffset;
+
+            DrawText("Gain",   (int)col1X, (int)groupTop, 20, RAYWHITE);
+            DrawText("Reverb", (int)col2X, (int)groupTop, 20, RAYWHITE);
+            DrawText("Chorus", (int)col3X, (int)groupTop, 20, RAYWHITE);
+
+            auto row = [&](float colX, float& cursorY, const char* label, float& value, float lo, float hi) {
+                DrawText(label, (int)colX, (int)cursorY, 16, RAYWHITE);
+                cursorY += labelHeight + labelGap;
+                GuiSlider({ colX, cursorY, sliderW, scaleSliderHeight }, "", TextFormat("%.2f", value), &value, lo, hi);
+                cursorY += scaleSliderHeight + rowGap;
+            };
+
+            float gainY   = groupTop + groupHeaderHeight + groupHeaderGap;
+            float reverbY = gainY;
+            float chorusY = gainY;
+
+            row(col1X, gainY,   "Gain",       gainValue,         0.0f,  10.0f);
+
+            row(col2X, reverbY, "Room Size",  reverbRoomValue,   0.0f,  1.2f);
+            row(col2X, reverbY, "Damping",    reverbDampValue,   0.0f,  1.0f);
+            row(col2X, reverbY, "Width",      reverbWidthValue,  0.0f,  100.0f);
+            row(col2X, reverbY, "Level",      reverbLevelValue,  0.0f,  1.0f);
+
+            row(col3X, chorusY, "Voices",     chorusVoicesValue, 0.0f,  20.0f);
+            row(col3X, chorusY, "Level",      chorusLevelValue,  0.0f,  10.0f);
+            row(col3X, chorusY, "Speed",      chorusSpeedValue,  0.29f, 5.0f);
+            row(col3X, chorusY, "Depth",      chorusDepthValue,  0.0f,  21.0f);
         }
-        cy2 += pathTextHeight + gapAfterPathText;
-
-        bool keepAspectValue = backgroundSettings.keepAspectRatio;
-        GuiCheckBox({ viewportX + 30.0f, cy2, 20.0f, checkboxHeight }, "Keep aspect ratio", &keepAspectValue);
-        backgroundSettings.keepAspectRatio = keepAspectValue;
-        cy2 += checkboxHeight + gapAfterCheckbox;
-
-        cy2 += padLabelReserve; // room for drawPositionPad's internal "Image position" label
-
-        drawPositionPad(viewportX + 30.0f, cy2, padW, padH, screenWidth, screenHeight);
-        cy2 += padH + gapAfterPad;
-
-        float oldScaleX = backgroundSettings.scaleX;
-        float oldScaleY = backgroundSettings.scaleY;
-        float scaleXValue = backgroundSettings.scaleX;
-        float scaleYValue = backgroundSettings.scaleY;
-        GuiSlider({ viewportX + 30.0f, cy2, 180.0f, scaleSliderHeight }, "Scale X", TextFormat("%.2f", scaleXValue), &scaleXValue, 0.1f, 3.0f);
-        cy2 += scaleSliderHeight + rowGap;
-        GuiSlider({ viewportX + 30.0f, cy2, 180.0f, scaleSliderHeight }, "Scale Y", TextFormat("%.2f", scaleYValue), &scaleYValue, 0.1f, 3.0f);
-        cy2 += scaleSliderHeight;
-
-        if (backgroundSettings.keepAspectRatio) {
-            if (scaleXValue != oldScaleX)      scaleYValue = scaleXValue;
-            else if (scaleYValue != oldScaleY) scaleXValue = scaleYValue;
-        }
-        backgroundSettings.scaleX = scaleXValue;
-        backgroundSettings.scaleY = scaleYValue;
-
         EndScissorMode();
     }
 

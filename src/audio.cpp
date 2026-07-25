@@ -11,6 +11,20 @@ namespace {
     fluid_synth_t* synth = nullptr;
     fluid_audio_driver_t* audioDriver = nullptr;
 
+    // Live-adjustable audio state. These are the source of truth; init() seeds
+    // the synth from them, and the setters below keep them in sync afterward.
+    float currentGain = 3.0f;
+
+    double reverbRoomSize = 0.5;
+    double reverbDamping = 0.0;
+    double reverbWidth = 5.0;
+    double reverbLevel = 0.0;
+
+    int chorusVoices = 3;
+    double chorusLevel = 1.2;
+    double chorusSpeed = 0.3;
+    double chorusDepth = 8.0;
+
     std::string resolveSoundfontPath() {
         const std::vector<std::string> candidates = {
             "assets/SalC5Light2.sf2",
@@ -88,10 +102,11 @@ namespace audio {
 
         fluid_synth_program_select(synth, 0, sfID, 0, 0); // channel 0, bank 0, preset 0 (usually grand piano)
 
-        // Built-in reverb/chorus - this is your "tone shaping" starting point
-        fluid_synth_set_reverb(synth, /*roomsize*/10.0, /*damping*/0.0, /*width*/5.0, /*level*/0.0);
-        fluid_synth_set_chorus(synth, /*nr*/3, /*level*/1.2, /*speed*/0.3, /*depth*/8.0, FLUID_CHORUS_MOD_SINE);
-        fluid_synth_set_gain(synth, 3.0f); // overall volume
+        // Built-in reverb/chorus - seeded from the adjustable state above so that
+        // any settings restored from disk (if you add that later) take effect here.
+        fluid_synth_set_reverb(synth, reverbRoomSize, reverbDamping, reverbWidth, reverbLevel);
+        fluid_synth_set_chorus(synth, chorusVoices, chorusLevel, chorusSpeed, chorusDepth, FLUID_CHORUS_MOD_SINE);
+        fluid_synth_set_gain(synth, currentGain);
     }
 
     void noteOn(int pitch, int velocity) {
@@ -121,4 +136,48 @@ namespace audio {
         delete_fluid_settings(settings);
     }
 
+    void setGain(float gain) {
+        currentGain = std::clamp(gain, 0.0f, 10.0f);
+        if (synth) {
+            fluid_synth_set_gain(synth, currentGain);
+        }
+    }
+
+    float getGain() {
+        return currentGain;
+    }
+
+    void setReverb(double roomSize, double damping, double width, double level) {
+        reverbRoomSize = roomSize;
+        reverbDamping = damping;
+        reverbWidth = width;
+        reverbLevel = level;
+        if (synth) {
+            fluid_synth_set_reverb(synth, reverbRoomSize, reverbDamping, reverbWidth, reverbLevel);
+        }
+    }
+
+    void getReverb(double& roomSize, double& damping, double& width, double& level) {
+        roomSize = reverbRoomSize;
+        damping = reverbDamping;
+        width = reverbWidth;
+        level = reverbLevel;
+    }
+
+    void setChorus(int voiceCount, double level, double speed, double depth) {
+        chorusVoices = voiceCount;
+        chorusLevel = level;
+        chorusSpeed = speed;
+        chorusDepth = depth;
+        if (synth) {
+            fluid_synth_set_chorus(synth, chorusVoices, chorusLevel, chorusSpeed, chorusDepth, FLUID_CHORUS_MOD_SINE);
+        }
+    }
+
+    void getChorus(int& voiceCount, double& level, double& speed, double& depth) {
+        voiceCount = chorusVoices;
+        level = chorusLevel;
+        speed = chorusSpeed;
+        depth = chorusDepth;
+    }
 }
