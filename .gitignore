@@ -35,3 +35,8 @@ assets/*.jpg
 # OS clutter
 Thumbs.db
 .DS_Store
+
+# Local Recordings
+*.pvrc
+*.mid
+*.midi

@@ -17,6 +17,8 @@
 
 #include "midi.h"
 #include "audio.h"
+#include "recording.h"
+#include "playback.h"
 #include "visuals/layout.h"
 #include "visuals/blocks.h"
 #include "visuals/particles.h"
@@ -27,11 +29,73 @@
 
 #include <iostream>
 #include <string>
+#include <ctime>
+#include <sstream>
+#include <iomanip>
+#include <filesystem>
 
 // ---------- Config ----------
 int SCREEN_W = 1000;
 int SCREEN_H = 700;
 Texture2D backgroundTexture; // for customizable background later
+
+// main.cpp lives at <project_root>/src/main.cpp, so its own compile-time
+// __FILE__ path lets us find the project root reliably regardless of the
+// process's working directory (i.e. regardless of whether this is launched
+// via the VS debugger, by double-clicking the exe, etc). This does assume
+// we're running on the machine this was built on, since __FILE__ bakes in
+// an absolute path at compile time - fine for a dev build, but revisit this
+// if the app is ever packaged up for other machines.
+static std::filesystem::path getProjectRoot() {
+    std::filesystem::path sourceFile = __FILE__; // .../<project_root>/src/main.cpp
+    return sourceFile.parent_path().parent_path(); // src/ -> project root
+}
+
+// Builds a shared timestamped base name (e.g. "recording_20260726_143205")
+// and creates <project_root>/recordings/pvrc/ and .../recordings/midi/,
+// so each stopped recording gets its own file in each format instead of
+// overwriting the last one, e.g.:
+//   recordings/pvrc/recording_20260726_143205.pvrc
+//   recordings/midi/recording_20260726_143205.mid
+struct RecordingPaths {
+    std::string pvrcPath;
+    std::string midPath;
+};
+
+static RecordingPaths generateRecordingPaths() {
+    const std::filesystem::path recordingsDir = getProjectRoot() / "recordings";
+    const std::filesystem::path pvrcDir = recordingsDir / "pvrc";
+    const std::filesystem::path midiDir = recordingsDir / "midi";
+
+    std::error_code ec;
+    std::filesystem::create_directories(pvrcDir, ec);
+    if (ec) {
+        std::cerr << "[Recording] Couldn't create '" << pvrcDir.string()
+                   << "' directory: " << ec.message() << std::endl;
+    }
+    ec.clear();
+    std::filesystem::create_directories(midiDir, ec);
+    if (ec) {
+        std::cerr << "[Recording] Couldn't create '" << midiDir.string()
+                   << "' directory: " << ec.message() << std::endl;
+    }
+
+    std::time_t now = std::time(nullptr);
+    std::tm localTime{};
+#if defined(_WIN32)
+    localtime_s(&localTime, &now);
+#else
+    localtime_r(&now, &localTime);
+#endif
+    std::ostringstream oss;
+    oss << "recording_" << std::put_time(&localTime, "%Y%m%d_%H%M%S");
+    const std::string baseName = oss.str();
+
+    return RecordingPaths{
+        (pvrcDir / (baseName + ".pvrc")).string(),
+        (midiDir / (baseName + ".mid")).string()
+    };
+}
 
 int main() {
     audio::init();
@@ -43,6 +107,8 @@ int main() {
     // backgroundTexture = LoadTexture("assets/background.PNG"); // customisable background
     std::cout << "Loaded background texture: " << backgroundTexture.width << "x" << backgroundTexture.height << std::endl;
     SetTargetFPS(120);
+
+    bool wasRecording = false;
 
     while (!WindowShouldClose()) {
         SCREEN_W = GetScreenWidth();
@@ -58,6 +124,9 @@ int main() {
 
         toolbar::update(dt);
         panel::update();
+        recording::update(dt);
+        playback::update(dt);
+        blocks::updateReverse(playback::getPlaybackTime()); // no-op unless reverse mode is on
 
         // ---------------- MIDI device check ----------------
         midiCheckTimer += dt;
@@ -107,18 +176,42 @@ int main() {
                 }
 
                 if (isNoteOn) {
+                    recording::onEvent(ev);
                     audio::noteOn(ev.note, ev.velocity);
                     blocks::onNoteOn(ev.note, ev.velocity);
                 }
                 else if (isNoteOff) {
+                    recording::onEvent(ev);
                     audio::noteOff(ev.note);
                     blocks::onNoteOff(ev.note);
                 }
                 else if (isControlChange) {
+                    // Includes the sustain pedal (CC 64) - needs to be
+                    // recorded too, not just dispatched live, or pedal
+                    // presses vanish from anything you play back later.
+                    recording::onEvent(ev);
                     audio::controlChange(ev.note, ev.velocity);
                 }
             }
         }
+
+        // ---------------- Recording save-on-stop ----------------
+        // The toolbar's record button flips recording::isRecording() via
+        // toggle(); here we just watch for the on->off transition and
+        // persist whatever was captured - as both our native .pvrc format
+        // and a standard .mid file, in their own subfolders under
+        // recordings/ (see generateRecordingPaths()).
+        bool isRecordingNow = recording::isRecording();
+        if (wasRecording && !isRecordingNow) {
+            RecordingPaths paths = generateRecordingPaths();
+            if (recording::saveToFile(paths.pvrcPath)) {
+                std::cout << "[Recording] Saved to " << paths.pvrcPath << std::endl;
+            }
+            if (recording::saveToMidFile(paths.midPath)) {
+                std::cout << "[Recording] Saved to " << paths.midPath << std::endl;
+            }
+        }
+        wasRecording = isRecordingNow;
 
         // ---------------- Update ----------------
         blocks::update(dt);

@@ -8,7 +8,8 @@
 #include <string>
 #include <vector>
 
-constexpr float RISE_SPEED = 220.0f; // pixels/sec block travel speed
+constexpr float RISE_SPEED = 220.0f; // pixels/sec block travel speed (live mode)
+constexpr float FALL_SPEED = RISE_SPEED; // pixels/sec (reverse/playback mode) - kept equal so the two modes feel consistent; tweak independently if you want a different lead time for playback
 
 // Base neon glow values at amount == 1.0 (the default/"normal" setting).
 // The actual per-frame values are these bases scaled by blockShaderAmount.
@@ -20,6 +21,12 @@ namespace {
     float blockRoundedness = 0.0f;
     blocks::ShaderStyle currentShaderStyle = blocks::ShaderStyle::None;
     float blockShaderAmount = 1.0f; // generic "more" slider value for whichever style is active
+
+    // --- Reverse (playback) mode state --------------------------------------
+    bool reverseModeEnabled = false;
+    std::vector<NoteSpan> scheduleNotes;   // full known schedule for the loaded recording
+    std::vector<NoteSpan> visibleFalling;  // subset of scheduleNotes currently on/near screen
+    double cachedPlaybackTime = 0.0;       // playback time as of the last updateReverse() call
 
     // --- Block material shader ---------------------------------------------
     Shader blockShader = { 0 };
@@ -128,6 +135,35 @@ namespace {
         glowTexHeight = h;
         glowTexturesReady = true;
     }
+
+    // Reverse-mode rendering: intentionally simple (no shader styles yet) -
+    // just colored rounded rectangles clipped so nothing draws past the
+    // keyboard line. The fancy Glossy/Metallic/Neon shader passes above are
+    // only wired up for the live activeNotes path; extending them here
+    // would mean threading rectPos/rectSize through this loop too, which is
+    // a reasonable follow-up but not needed for the core falling-block
+    // effect to work.
+    void drawReverseFalling(int screenWidth) {
+        const float keyTopY = (float)GetScreenHeight() - PIANO_HEIGHT;
+
+        for (const auto& note : visibleFalling) {
+            KeyRect kr = layout::getKeyRect(note.pitch, screenWidth);
+            Color c = layout::colorForPitch(note.pitch, note.velocity);
+
+            const double length = (note.offTime - note.onTime) * FALL_SPEED;
+            const double bottomY = keyTopY + (cachedPlaybackTime - note.onTime) * FALL_SPEED;
+            const double topY = bottomY - length;
+
+            // Clip to the keyboard line so the block appears to sink in
+            // rather than drawing on top of the keys.
+            const float visibleBottom = (float)std::min(bottomY, (double)keyTopY);
+            const float visibleTop = (float)topY;
+            const float visibleHeight = visibleBottom - visibleTop;
+            if (visibleHeight <= 0.0f) continue;
+
+            DrawRectangleRounded({ kr.x, visibleTop, kr.width - 2, visibleHeight }, blockRoundedness, 8, c);
+        }
+    }
 }
 
 namespace blocks {
@@ -162,6 +198,38 @@ namespace blocks {
             }
         }
     }
+
+    void setReverseMode(bool enabled) {
+        reverseModeEnabled = enabled;
+    }
+    bool isReverseMode() {
+        return reverseModeEnabled;
+    }
+
+    void setSchedule(std::vector<NoteSpan> notes) {
+        scheduleNotes = std::move(notes);
+        visibleFalling.clear();
+    }
+
+    void updateReverse(double playbackTime) {
+        if (!reverseModeEnabled) return;
+        cachedPlaybackTime = playbackTime;
+
+        const float keyTopY = (float)GetScreenHeight() - PIANO_HEIGHT;
+
+        visibleFalling.clear();
+        for (const auto& note : scheduleNotes) {
+            const double length = (note.offTime - note.onTime) * FALL_SPEED;
+            const double bottomY = keyTopY + (playbackTime - note.onTime) * FALL_SPEED;
+            const double topY = bottomY - length;
+
+            if (topY >= keyTopY) continue; // already sunk fully into the keys
+            if (bottomY <= 0.0) continue;  // hasn't fallen into view yet
+
+            visibleFalling.push_back(note);
+        }
+    }
+
     void update(float dt) {
         for (auto& n : activeNotes) {
             if (n.held) n.length += RISE_SPEED * dt;
@@ -174,6 +242,11 @@ namespace blocks {
     }
 
     void draw(int screenWidth) {
+        if (reverseModeEnabled) {
+            drawReverseFalling(screenWidth);
+            return;
+        }
+
         ensureShaderLoaded();
 
         const bool useShader = blockShaderLoaded && currentShaderStyle != ShaderStyle::None;

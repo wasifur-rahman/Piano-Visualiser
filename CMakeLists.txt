@@ -19,6 +19,9 @@ add_executable(piano_viz
     src/main.cpp
     src/audio.cpp
     src/midi.cpp
+    src/recording.cpp
+    src/playback.cpp
+    src/midi_file_io.cpp
     src/window_state.cpp
     src/visuals/layout.cpp
     src/visuals/blocks.cpp
@@ -26,9 +29,15 @@ add_executable(piano_viz
     src/visuals/keyboard.cpp
     src/ui/toolbar.cpp
     src/ui/panel.cpp
+    src/midifile/midifile/src/MidiFile.cpp
+    src/midifile/midifile/src/MidiEvent.cpp
+    src/midifile/midifile/src/MidiEventList.cpp
+    src/midifile/midifile/src/MidiMessage.cpp
+    src/midifile/midifile/src/Binasc.cpp
+    src/midifile/midifile/src/Options.cpp
 )
 
-target_include_directories(piano_viz PRIVATE ${RAYLIB_SRC} ${RAYGUI_SRC})
+target_include_directories(piano_viz PRIVATE ${RAYLIB_SRC} ${RAYGUI_SRC} src/midifile/midifile/include)
 
 target_link_libraries(piano_viz PRIVATE
     RtMidi::rtmidi
